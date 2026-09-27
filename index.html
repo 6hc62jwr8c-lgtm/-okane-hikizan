@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>おかねで ひきざん</title>
+<style>
+  :root{
+    --bg:#fffdf8;--ink:#2f2f2f;--muted:#757575;--line:#d7d7d7;--panel:#f7f7f2;
+    --accent:#4b7a63;--accent-soft:#e9f2ed;--pay:#fff8e9;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{background:var(--bg);overscroll-behavior:none}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;overscroll-behavior:none}
+  body.drag-locked{position:fixed;width:100%;overflow:hidden;touch-action:none}
+  main{width:min(760px,100%);margin:0 auto;padding:12px 10px 22px}
+  .formula{display:flex;align-items:center;justify-content:center;gap:12px;margin:2px 0 4px}
+  .formula input{width:112px;min-height:54px;border:0;border-bottom:3px solid #aaa;background:transparent;text-align:center;font-size:34px;font-weight:800;color:var(--ink);outline:none;border-radius:0;padding:4px}
+  .formula input:focus{border-bottom-color:var(--accent)}
+  .minus{font-size:36px;font-weight:800}
+  .message{min-height:18px;text-align:center;color:var(--muted);font-size:13px;margin:0 0 6px}
+  .board{border:2px dashed var(--line);border-radius:18px;padding:8px;background:#fff}
+  .board + .board{margin-top:8px}
+  .board-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 2px 6px}
+  .board-title{font-size:17px;font-weight:800}
+  .total{font-size:15px;font-weight:700;color:#555}
+  .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+  .col{min-width:0;background:var(--panel);border-radius:14px;padding:5px}
+  .col-label{text-align:center;font-size:14px;font-weight:800;margin-bottom:4px}
+  .coins{display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center;gap:4px;min-height:116px}
+  .pay-board .coins{min-height:86px}
+  .coin{width:clamp(31px,9.2vw,38px);height:clamp(31px,9.2vw,38px);border-radius:50%;display:grid;place-items:center;border:2px solid;font-size:11px;font-weight:800;padding:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;background:white;transition:opacity .12s,transform .12s}
+  .coin[data-v="100"]{background:#e5f0e9;border-color:#6d927c;color:#2d5940}
+  .coin[data-v="10"]{background:#f3d8ae;border-color:#a97749;color:#633c1f}
+  .coin[data-v="1"]{background:#eef1f2;border-color:#9ea9ad;color:#36484f}
+  .coin.source{opacity:.22}
+  .coin.selected{transform:scale(1.1)}
+  .exchange-wrap{padding:5px 0;margin:2px 0}
+  .exchange{width:100%;min-height:48px;border:2px dashed #c9c9c9;border-radius:15px;background:#fff;font-size:20px;font-weight:800;color:var(--ink)}
+  .exchange.flash{animation:exchangeFlash .58s ease}
+  .done{width:100%;min-height:54px;margin-top:9px;border:0;border-radius:16px;background:var(--accent);color:white;font-size:22px;font-weight:800}
+  .result{position:relative;min-height:52px;display:grid;place-items:center;font-size:34px;font-weight:900;overflow:visible}
+  .result.correct{animation:resultPop .5s cubic-bezier(.2,.8,.2,1)}
+  .ghost{position:fixed;left:0;top:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;border:3px solid;font-size:12px;font-weight:800;pointer-events:none;z-index:99999;transform:translate(-50%,-50%) scale(1.08);box-shadow:0 8px 22px rgba(0,0,0,.22)}
+  .ghost[data-v="100"]{background:#e5f0e9;border-color:#6d927c;color:#2d5940}
+  .ghost[data-v="10"]{background:#f3d8ae;border-color:#a97749;color:#633c1f}
+  .ghost[data-v="1"]{background:#eef1f2;border-color:#9ea9ad;color:#36484f}
+  .spawn{animation:spawn .34s ease both}
+  .spark{position:absolute;width:8px;height:8px;border-radius:50%;background:var(--accent);left:50%;top:50%;pointer-events:none;animation:spark .7s ease-out forwards}
+  @keyframes spawn{0%{opacity:0;transform:scale(.2)}70%{opacity:1;transform:scale(1.14)}100%{opacity:1;transform:scale(1)}}
+  @keyframes exchangeFlash{0%,100%{background:#fff}45%{background:var(--accent-soft)}}
+  @keyframes resultPop{0%{transform:scale(.75);opacity:0}65%{transform:scale(1.1);opacity:1}100%{transform:scale(1)}}
+  @keyframes spark{from{transform:translate(-50%,-50%) rotate(var(--a)) translateX(0);opacity:1}to{transform:translate(-50%,-50%) rotate(var(--a)) translateX(58px);opacity:0}}
+  @media (max-width:380px){
+    main{padding-left:7px;padding-right:7px}.formula input{width:98px;font-size:31px}.coins{gap:3px}.board{padding:6px}.col{padding:4px}
+  }
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main id="app">
+  <section class="formula" aria-label="ひきざんの式">
+    <input id="minuend" type="text" inputmode="numeric" maxlength="3" pattern="[0-9]*" aria-label="ひかれる数" value="143" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <span class="minus">−</span>
+    <input id="subtrahend" type="text" inputmode="numeric" maxlength="2" pattern="[0-9]*" aria-label="ひく数" value="68" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  </section>
+  <div id="message" class="message" aria-live="polite">すうじを いれてね</div>
+
+  <section id="walletZone" data-zone="wallet" class="board">
+    <div class="board-head"><div class="board-title">じぶんの お金</div></div>
+    <div class="cols">
+      <div class="col" data-area="wallet" data-denom="100"><div class="col-label">100円</div><div class="coins"></div></div>
+      <div class="col" data-area="wallet" data-denom="10"><div class="col-label">10円</div><div class="coins"></div></div>
+      <div class="col" data-area="wallet" data-denom="1"><div class="col-label">1円</div><div class="coins"></div></div>
+    </div>
+  </section>
+
+  <div id="exchangeHit" data-zone="exchange" class="exchange-wrap">
+    <button id="exchangeButton" class="exchange" type="button">りょうがえ</button>
+  </div>
+
+  <section id="payZone" data-zone="pay" class="board pay-board">
+    <div class="board-head"><div class="board-title">しはらう お金</div><div id="payTotal" class="total">0円</div></div>
+    <div class="cols">
+      <div class="col" data-area="pay" data-denom="100"><div class="col-label">100円</div><div class="coins"></div></div>
+      <div class="col" data-area="pay" data-denom="10"><div class="col-label">10円</div><div class="coins"></div></div>
+      <div class="col" data-area="pay" data-denom="1"><div class="col-label">1円</div><div class="coins"></div></div>
+    </div>
+  </section>
+
+  <button id="done" class="done" type="button">けいさんできた</button>
+  <div id="result" class="result" aria-live="assertive"></div>
+</main>
+<script>
+(()=>{
+  'use strict';
+  const app=document.getElementById('app');
+  const minuend=document.getElementById('minuend');
+  const subtrahend=document.getElementById('subtrahend');
+  const message=document.getElementById('message');
+  const payTotal=document.getElementById('payTotal');
+  const exchangeButton=document.getElementById('exchangeButton');
+  const result=document.getElementById('result');
+  const state={a:null,b:null,wallet:{100:0,10:0,1:0},pay:{100:0,10:0,1:0},selected:null};
+  let inputTimer=null;
+  let drag=null;
+  let lockedScrollY=0;
+
+  const split=n=>({100:Math.floor(n/100),10:Math.floor((n%100)/10),1:n%10});
+  const total=area=>state[area][100]*100+state[area][10]*10+state[area][1];
+  const allCoins=()=>Array.from(app.querySelectorAll('.coin'));
+
+  function sanitize(el){
+    const limit = el===subtrahend ? 2 : 3;
+    const clean=el.value.replace(/\D/g,'').slice(0,limit);
+    if(el.value!==clean) el.value=clean;
+  }
+
+  function lockPage(){
+    if(document.body.classList.contains('drag-locked')) return;
+    lockedScrollY=window.scrollY || document.documentElement.scrollTop || 0;
+    document.body.style.top=`-${lockedScrollY}px`;
+    document.body.classList.add('drag-locked');
+  }
+  function unlockPage(){
+    if(!document.body.classList.contains('drag-locked')) return;
+    document.body.classList.remove('drag-locked');
+    document.body.style.top='';
+    window.scrollTo(0,lockedScrollY);
+  }
+
+  function makeCoin(v,area,animate=false,delay=0){
+    const el=document.createElement('button');
+    el.type='button';
+    el.className='coin'+(animate?' spawn':'');
+    if(animate) el.style.animationDelay=`${delay}ms`;
+    el.dataset.v=String(v);
+    el.dataset.area=area;
+    el.textContent=`${v}円`;
+    el.setAttribute('aria-label',`${v}円`);
+
+    let sx=0, sy=0, moved=false;
+
+    el.addEventListener('pointerdown',e=>{
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      e.preventDefault();
+      sx=e.clientX; sy=e.clientY; moved=false;
+      lockPage();
+      const ghost=document.createElement('div');
+      ghost.className='ghost'; ghost.dataset.v=String(v); ghost.textContent=`${v}円`;
+      document.body.appendChild(ghost);
+      ghost.style.left=`${e.clientX}px`; ghost.style.top=`${e.clientY}px`;
+      el.classList.add('source');
+      drag={el,v,area,ghost,pointerId:e.pointerId};
+      try{el.setPointerCapture(e.pointerId)}catch(_){ }
+    },{passive:false});
+
+    el.addEventListener('pointermove',e=>{
+      if(!drag || drag.el!==el) return;
+      e.preventDefault();
+      if(Math.abs(e.clientX-sx)+Math.abs(e.clientY-sy)>4) moved=true;
+      drag.ghost.style.left=`${e.clientX}px`; drag.ghost.style.top=`${e.clientY}px`;
+    },{passive:false});
+
+    el.addEventListener('pointerup',e=>{
+      if(!drag || drag.el!==el) return;
+      e.preventDefault();
+      try{el.releasePointerCapture(e.pointerId)}catch(_){ }
+      const zone=findDropZone(e.clientX,e.clientY);
+      const info={v,area,moved,zone};
+      cleanupDrag();
+      handleDrop(info);
+    },{passive:false});
+
+    el.addEventListener('pointercancel',()=>cleanupDrag());
+    return el;
+  }
+
+  function findDropZone(x,y){
+    const target=document.elementFromPoint(x,y);
+    const zone=target && target.closest ? target.closest('[data-zone]') : null;
+    return zone && app.contains(zone) ? zone.dataset.zone : null;
+  }
+
+  function cleanupDrag(){
+    if(!drag){unlockPage();return;}
+    if(drag.ghost && drag.ghost.isConnected) drag.ghost.remove();
+    if(drag.el) drag.el.classList.remove('source');
+    drag=null;
+    unlockPage();
+  }
+
+  function handleDrop({v,area,moved,zone}){
+    if(!moved){
+      state.selected={v,area};
+      allCoins().forEach(c=>c.classList.remove('selected'));
+      const candidate=Array.from(app.querySelectorAll(`.coin[data-v="${v}"][data-area="${area}"]`))[0];
+      if(candidate) candidate.classList.add('selected');
+      return;
+    }
+    if(zone==='exchange' && area==='wallet'){ exchange(v); return; }
+    if(zone==='pay' && area==='wallet'){ move('wallet','pay',v); return; }
+    if(zone==='wallet' && area==='pay'){ move('pay','wallet',v); return; }
+  }
+
+  function render(animated=null){
+    for(const area of ['wallet','pay']){
+      for(const d of [100,10,1]){
+        const holder=app.querySelector(`.col[data-area="${area}"][data-denom="${d}"] .coins`);
+        holder.innerHTML='';
+        const count=state[area][d];
+        for(let i=0;i<count;i++){
+          const shouldAnimate=animated && animated.area===area && animated.denom===d;
+          holder.appendChild(makeCoin(d,area,shouldAnimate,shouldAnimate?Math.min(i*24,220):0));
+        }
+      }
+    }
+    payTotal.textContent=state.b===null?`${total('pay')}円`:`${total('pay')}円 / ${state.b}円`;
+    state.selected=null;
+  }
+
+  function exchange(v){
+    if(areaInvalidForExchange(v)) return;
+    const next=v/10;
+    state.wallet[v]--;
+    state.wallet[next]+=10;
+    render({area:'wallet',denom:next});
+    exchangeButton.classList.remove('flash');
+    void exchangeButton.offsetWidth;
+    exchangeButton.classList.add('flash');
+    setTimeout(()=>exchangeButton.classList.remove('flash'),650);
+  }
+  function areaInvalidForExchange(v){
+    return (v!==100 && v!==10) || state.wallet[v]<1;
+  }
+
+  function move(from,to,v){
+    if(state[from][v]<1) return;
+    state[from][v]--;
+    state[to][v]++;
+    render();
+  }
+
+  function applyInputs(){
+    sanitize(minuend); sanitize(subtrahend);
+    const av=minuend.value.trim();
+    const bv=subtrahend.value.trim();
+    if(av===''){
+      state.a=null; state.wallet={100:0,10:0,1:0}; state.pay={100:0,10:0,1:0};
+      message.textContent='すうじを いれてね';
+    }else{
+      state.a=Number(av);
+      state.wallet=split(state.a);
+      state.pay={100:0,10:0,1:0};
+      message.textContent='';
+    }
+    state.b=bv===''?null:Number(bv);
+    result.textContent=''; result.className='result';
+    render();
+  }
+
+  function scheduleInput(e){
+    const target=e.target;
+    sanitize(target);
+    clearTimeout(inputTimer);
+    inputTimer=setTimeout(()=>{
+      inputTimer=null;
+      applyInputs();
+      // 入力が終わったら確定してキーボードを閉じる。
+      // お金を触る段階で数字が追加入力されるのを防ぐ。
+      if(document.activeElement===target) target.blur();
+    },1800);
+  }
+  [minuend,subtrahend].forEach(el=>{
+    // タップしたら現在の数を全選択。次の入力でそのまま上書きできる。
+    el.addEventListener('focus',()=>{
+      setTimeout(()=>{
+        try{ el.setSelectionRange(0,el.value.length); }catch(_){ }
+      },0);
+    });
+    el.addEventListener('click',()=>{
+      try{ el.setSelectionRange(0,el.value.length); }catch(_){ }
+    });
+    el.addEventListener('input',scheduleInput);
+    el.addEventListener('blur',()=>{
+      if(inputTimer!==null){
+        clearTimeout(inputTimer);
+        inputTimer=null;
+        applyInputs();
+      }
+    });
+  });
+
+  exchangeButton.addEventListener('click',()=>{
+    const s=state.selected;
+    if(s && s.area==='wallet') exchange(s.v);
+  });
+  document.getElementById('payZone').addEventListener('click',e=>{
+    if(e.target.closest('.coin')) return;
+    const s=state.selected;
+    if(s && s.area==='wallet') move('wallet','pay',s.v);
+  });
+  document.getElementById('walletZone').addEventListener('click',e=>{
+    if(e.target.closest('.coin')) return;
+    const s=state.selected;
+    if(s && s.area==='pay') move('pay','wallet',s.v);
+  });
+
+  function celebrate(){
+    result.className='result correct';
+    for(let i=0;i<10;i++){
+      const s=document.createElement('i');
+      s.className='spark';
+      s.style.setProperty('--a',`${i*36}deg`);
+      result.appendChild(s);
+      setTimeout(()=>s.remove(),800);
+    }
+  }
+
+  // 初期問題 143−68 を実値として反映する。
+  applyInputs();
+
+  document.getElementById('done').addEventListener('click',()=>{
+    result.className='result';
+    result.textContent='';
+    if(state.a===null || state.b===null || state.b>state.a){ result.textContent='もういちど'; return; }
+    const ok=total('pay')===state.b && total('wallet')===state.a-state.b;
+    result.textContent=ok?'せいかい！':'もういちど';
+    if(ok) celebrate();
+  });
+})();
+</script>
+</body>
+</html>
