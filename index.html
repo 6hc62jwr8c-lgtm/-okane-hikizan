@@ -35,9 +35,10 @@
   .coin[data-v="1"]{background:#eef1f2;border-color:#9ea9ad;color:#36484f}
   .coin.source{opacity:.22}
   .coin.selected{transform:scale(1.1)}
-  .exchange-wrap{padding:5px 0;margin:2px 0}
-  .exchange{width:100%;min-height:48px;border:2px dashed #c9c9c9;border-radius:15px;background:#fff;font-size:20px;font-weight:800;color:var(--ink)}
-  .exchange.flash{animation:exchangeFlash .58s ease}
+  .answer-wrap{margin-top:10px}
+  .answer-title{font-size:14px;font-weight:800;color:#555;margin:0 2px 4px}
+  .answer-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;border-top:3px solid #555;padding-top:5px}
+  .answer-cell{min-height:48px;display:grid;place-items:center;border-radius:10px;background:#fbfbf8;font-size:32px;font-weight:900}
   .done{width:100%;min-height:54px;margin-top:9px;border:0;border-radius:16px;background:var(--accent);color:white;font-size:22px;font-weight:800}
   .result{position:relative;min-height:52px;display:grid;place-items:center;font-size:34px;font-weight:900;overflow:visible}
   .result.correct{animation:resultPop .5s cubic-bezier(.2,.8,.2,1)}
@@ -75,16 +76,20 @@
     </div>
   </section>
 
-  <div id="exchangeHit" data-zone="exchange" class="exchange-wrap">
-    <button id="exchangeButton" class="exchange" type="button">りょうがえ</button>
-  </div>
-
   <section id="payZone" data-zone="pay" class="board pay-board">
     <div class="board-head"><div class="board-title">しはらう お金</div><div id="payTotal" class="total">0円</div></div>
     <div class="cols">
       <div class="col" data-area="pay" data-denom="100"><div class="col-label">100円</div><div class="coins"></div></div>
       <div class="col" data-area="pay" data-denom="10"><div class="col-label">10円</div><div class="coins"></div></div>
       <div class="col" data-area="pay" data-denom="1"><div class="col-label">1円</div><div class="coins"></div></div>
+    </div>
+    <div class="answer-wrap" aria-live="polite">
+      <div class="answer-title">こたえ</div>
+      <div class="answer-cols">
+        <div class="answer-cell" data-answer="100"></div>
+        <div class="answer-cell" data-answer="10"></div>
+        <div class="answer-cell" data-answer="1"></div>
+      </div>
     </div>
   </section>
 
@@ -99,7 +104,7 @@
   const subtrahend=document.getElementById('subtrahend');
   const message=document.getElementById('message');
   const payTotal=document.getElementById('payTotal');
-  const exchangeButton=document.getElementById('exchangeButton');
+  const answerCells=Array.from(document.querySelectorAll('.answer-cell'));
   const result=document.getElementById('result');
   const state={a:null,b:null,wallet:{100:0,10:0,1:0},pay:{100:0,10:0,1:0},selected:null};
   let inputTimer=null;
@@ -178,7 +183,10 @@
 
   function findDropZone(x,y){
     const target=document.elementFromPoint(x,y);
-    const zone=target && target.closest ? target.closest('[data-zone]') : null;
+    if(!target || !target.closest) return null;
+    const walletCol=target.closest('.col[data-area="wallet"]');
+    if(walletCol && app.contains(walletCol)) return 'wallet-'+walletCol.dataset.denom;
+    const zone=target.closest('[data-zone]');
     return zone && app.contains(zone) ? zone.dataset.zone : null;
   }
 
@@ -198,9 +206,9 @@
       if(candidate) candidate.classList.add('selected');
       return;
     }
-    if(zone==='exchange' && area==='wallet'){ exchange(v); return; }
+    if(area==='wallet' && zone===`wallet-${v/10}` && (v===100 || v===10)){ exchange(v); return; }
     if(zone==='pay' && area==='wallet'){ move('wallet','pay',v); return; }
-    if(zone==='wallet' && area==='pay'){ move('pay','wallet',v); return; }
+    if(area==='pay' && zone && zone.startsWith('wallet-')){ move('pay','wallet',v); return; }
   }
 
   function render(animated=null){
@@ -219,16 +227,23 @@
     state.selected=null;
   }
 
+  function clearAnswer(){
+    answerCells.forEach(cell=>cell.textContent='');
+  }
+  function showAnswer(n){
+    const digits=String(n).padStart(3,' ');
+    answerCells[0].textContent=digits[0].trim();
+    answerCells[1].textContent=digits[1].trim();
+    answerCells[2].textContent=digits[2].trim();
+  }
+
   function exchange(v){
     if(areaInvalidForExchange(v)) return;
+    clearAnswer();
     const next=v/10;
     state.wallet[v]--;
     state.wallet[next]+=10;
     render({area:'wallet',denom:next});
-    exchangeButton.classList.remove('flash');
-    void exchangeButton.offsetWidth;
-    exchangeButton.classList.add('flash');
-    setTimeout(()=>exchangeButton.classList.remove('flash'),650);
   }
   function areaInvalidForExchange(v){
     return (v!==100 && v!==10) || state.wallet[v]<1;
@@ -236,6 +251,7 @@
 
   function move(from,to,v){
     if(state[from][v]<1) return;
+    clearAnswer();
     state[from][v]--;
     state[to][v]++;
     render();
@@ -255,6 +271,7 @@
       message.textContent='';
     }
     state.b=bv===''?null:Number(bv);
+    clearAnswer();
     result.textContent=''; result.className='result';
     render();
   }
@@ -291,10 +308,6 @@
     });
   });
 
-  exchangeButton.addEventListener('click',()=>{
-    const s=state.selected;
-    if(s && s.area==='wallet') exchange(s.v);
-  });
   document.getElementById('payZone').addEventListener('click',e=>{
     if(e.target.closest('.coin')) return;
     const s=state.selected;
@@ -303,7 +316,12 @@
   document.getElementById('walletZone').addEventListener('click',e=>{
     if(e.target.closest('.coin')) return;
     const s=state.selected;
-    if(s && s.area==='pay') move('pay','wallet',s.v);
+    if(!s) return;
+    const col=e.target.closest('.col[data-area="wallet"]');
+    if(!col) return;
+    const target=Number(col.dataset.denom);
+    if(s.area==='pay'){ move('pay','wallet',s.v); return; }
+    if(s.area==='wallet' && (s.v===100 || s.v===10) && target===s.v/10){ exchange(s.v); }
   });
 
   function celebrate(){
@@ -326,7 +344,12 @@
     if(state.a===null || state.b===null || state.b>state.a){ result.textContent='もういちど'; return; }
     const ok=total('pay')===state.b && total('wallet')===state.a-state.b;
     result.textContent=ok?'せいかい！':'もういちど';
-    if(ok) celebrate();
+    if(ok){
+      showAnswer(state.a-state.b);
+      celebrate();
+    }else{
+      clearAnswer();
+    }
   });
 })();
 </script>
