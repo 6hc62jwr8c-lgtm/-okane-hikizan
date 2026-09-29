@@ -25,10 +25,11 @@
   .board-title{font-size:17px;font-weight:800}
   .total{font-size:15px;font-weight:700;color:#555}
   .cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-  .col{min-width:0;background:var(--panel);border-radius:14px;padding:5px}
-  .col-label{text-align:center;font-size:14px;font-weight:800;margin-bottom:4px}
-  .coins{display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center;gap:4px;min-height:116px}
+  .col{min-width:0;background:var(--panel);border-radius:14px;padding:5px;position:relative;overflow:hidden}
+  .col-label{text-align:center;font-size:14px;font-weight:800;margin-bottom:4px;position:relative;z-index:2}
+  .coins{display:flex;flex-wrap:wrap;align-content:flex-start;justify-content:center;gap:4px;min-height:116px;position:relative;z-index:2}
   .pay-board .coins{min-height:86px}
+  .target-digit{position:absolute;inset:24px 0 0;display:grid;place-items:center;font-size:64px;font-weight:900;color:rgba(47,47,47,.09);pointer-events:none;z-index:1}
   .coin{width:clamp(31px,9.2vw,38px);height:clamp(31px,9.2vw,38px);border-radius:50%;display:grid;place-items:center;border:2px solid;font-size:11px;font-weight:800;padding:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;background:white;transition:opacity .12s,transform .12s}
   .coin[data-v="100"]{background:#e5f0e9;border-color:#6d927c;color:#2d5940}
   .coin[data-v="10"]{background:#f3d8ae;border-color:#a97749;color:#633c1f}
@@ -40,6 +41,8 @@
   .answer-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;border-top:3px solid #555;padding-top:5px}
   .answer-cell{min-height:48px;display:grid;place-items:center;border-radius:10px;background:#fbfbf8;font-size:32px;font-weight:900}
   .done{width:100%;min-height:54px;margin-top:9px;border:0;border-radius:16px;background:var(--accent);color:white;font-size:22px;font-weight:800}
+  .retry{display:none;width:100%;min-height:50px;margin-top:8px;border:2px solid var(--accent);border-radius:16px;background:#fff;color:var(--accent);font-size:20px;font-weight:800}
+  .retry.show{display:block}
   .result{position:relative;min-height:52px;display:grid;place-items:center;font-size:34px;font-weight:900;overflow:visible}
   .result.correct{animation:resultPop .5s cubic-bezier(.2,.8,.2,1)}
   .ghost{position:fixed;left:0;top:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;border:3px solid;font-size:12px;font-weight:800;pointer-events:none;z-index:99999;transform:translate(-50%,-50%) scale(1.08);box-shadow:0 8px 22px rgba(0,0,0,.22)}
@@ -79,9 +82,9 @@
   <section id="payZone" data-zone="pay" class="board pay-board">
     <div class="board-head"><div class="board-title">しはらう お金</div><div id="payTotal" class="total">0円</div></div>
     <div class="cols">
-      <div class="col" data-area="pay" data-denom="100"><div class="col-label">100円</div><div class="coins"></div></div>
-      <div class="col" data-area="pay" data-denom="10"><div class="col-label">10円</div><div class="coins"></div></div>
-      <div class="col" data-area="pay" data-denom="1"><div class="col-label">1円</div><div class="coins"></div></div>
+      <div class="col" data-area="pay" data-denom="100"><div class="col-label">100円</div><div class="target-digit" data-target="100"></div><div class="coins"></div></div>
+      <div class="col" data-area="pay" data-denom="10"><div class="col-label">10円</div><div class="target-digit" data-target="10"></div><div class="coins"></div></div>
+      <div class="col" data-area="pay" data-denom="1"><div class="col-label">1円</div><div class="target-digit" data-target="1"></div><div class="coins"></div></div>
     </div>
     <div class="answer-wrap" aria-live="polite">
       <div class="answer-title">こたえ</div>
@@ -94,6 +97,7 @@
   </section>
 
   <button id="done" class="done" type="button">けいさんできた</button>
+  <button id="retry" class="retry" type="button">もういちど やる</button>
   <div id="result" class="result" aria-live="assertive"></div>
 </main>
 <script>
@@ -105,6 +109,8 @@
   const message=document.getElementById('message');
   const payTotal=document.getElementById('payTotal');
   const answerCells=Array.from(document.querySelectorAll('.answer-cell'));
+  const targetDigits=Array.from(document.querySelectorAll('.target-digit'));
+  const retry=document.getElementById('retry');
   const result=document.getElementById('result');
   const state={a:null,b:null,wallet:{100:0,10:0,1:0},pay:{100:0,10:0,1:0},selected:null};
   let inputTimer=null;
@@ -207,6 +213,7 @@
       return;
     }
     if(area==='wallet' && zone===`wallet-${v/10}` && (v===100 || v===10)){ exchange(v); return; }
+    if(area==='wallet' && zone===`wallet-${v*10}` && (v===10 || v===1)){ exchangeUp(v); return; }
     if(zone==='pay' && area==='wallet'){ move('wallet','pay',v); return; }
     if(area==='pay' && zone && zone.startsWith('wallet-')){ move('pay','wallet',v); return; }
   }
@@ -224,6 +231,11 @@
       }
     }
     payTotal.textContent=state.b===null?`${total('pay')}円`:`${total('pay')}円 / ${state.b}円`;
+    const target=state.b===null?{100:'',10:'',1:''}:split(state.b);
+    targetDigits.forEach(el=>{
+      const d=Number(el.dataset.target);
+      el.textContent=target[d] ? String(target[d]) : '';
+    });
     state.selected=null;
   }
 
@@ -240,9 +252,19 @@
   function exchange(v){
     if(areaInvalidForExchange(v)) return;
     clearAnswer();
+    retry.classList.remove('show');
     const next=v/10;
     state.wallet[v]--;
     state.wallet[next]+=10;
+    render({area:'wallet',denom:next});
+  }
+  function exchangeUp(v){
+    if((v!==10 && v!==1) || state.wallet[v]<10) return;
+    clearAnswer();
+    retry.classList.remove('show');
+    const next=v*10;
+    state.wallet[v]-=10;
+    state.wallet[next]+=1;
     render({area:'wallet',denom:next});
   }
   function areaInvalidForExchange(v){
@@ -252,6 +274,7 @@
   function move(from,to,v){
     if(state[from][v]<1) return;
     clearAnswer();
+    retry.classList.remove('show');
     state[from][v]--;
     state[to][v]++;
     render();
@@ -272,6 +295,7 @@
     }
     state.b=bv===''?null:Number(bv);
     clearAnswer();
+    retry.classList.remove('show');
     result.textContent=''; result.className='result';
     render();
   }
@@ -321,7 +345,8 @@
     if(!col) return;
     const target=Number(col.dataset.denom);
     if(s.area==='pay'){ move('pay','wallet',s.v); return; }
-    if(s.area==='wallet' && (s.v===100 || s.v===10) && target===s.v/10){ exchange(s.v); }
+    if(s.area==='wallet' && (s.v===100 || s.v===10) && target===s.v/10){ exchange(s.v); return; }
+    if(s.area==='wallet' && (s.v===10 || s.v===1) && target===s.v*10){ exchangeUp(s.v); }
   });
 
   function celebrate(){
@@ -335,20 +360,40 @@
     }
   }
 
+  function resetSameProblem(){
+    if(state.a===null) return;
+    state.wallet=split(state.a);
+    state.pay={100:0,10:0,1:0};
+    state.selected=null;
+    clearAnswer();
+    retry.classList.remove('show');
+    result.textContent='';
+    result.className='result';
+    message.textContent='';
+    render();
+  }
+  retry.addEventListener('click',resetSameProblem);
+
   // 初期問題 143−68 を実値として反映する。
   applyInputs();
 
   document.getElementById('done').addEventListener('click',()=>{
     result.className='result';
     result.textContent='';
-    if(state.a===null || state.b===null || state.b>state.a){ result.textContent='もういちど'; return; }
+    if(state.a===null || state.b===null || state.b>state.a){
+      result.textContent='もういちど';
+      retry.classList.add('show');
+      return;
+    }
     const ok=total('pay')===state.b && total('wallet')===state.a-state.b;
     result.textContent=ok?'せいかい！':'もういちど';
     if(ok){
+      retry.classList.remove('show');
       showAnswer(state.a-state.b);
       celebrate();
     }else{
       clearAnswer();
+      retry.classList.add('show');
     }
   });
 })();
